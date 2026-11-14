@@ -218,3 +218,10 @@ canvas#pidChart {
 .leg.act { color: #22c55e; }
 .leg.err { color: #f59e0b; }
 .leg.out { color: #ef4444; }
+
+.calib-grid { display: grid; grid-template-columns: 1fr; gap: 8px; }
+@media (min-width: 650px) { .calib-grid { grid-template-columns: 1fr 1fr; } }
+.calib-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: #0f172a; padding: 8px 10px; border-radius: 8px; font-size: 0.85rem; }
+.inline-chk { display: flex !important; flex-direction: row !important; align-items: center; gap: 4px; }
+.inline-num { display: flex !important; flex-direction: row !important; align-items: center; gap: 6px; }
+.inline-num input { width: 64px; padding: 5px; }

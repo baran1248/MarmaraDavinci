@@ -16,7 +16,7 @@
   <header class="topbar">
     <div class="brand">
       <span class="dot" id="wsDot"></span>
-      <strong>MarmaraDavinci (8 Motor / Çift El)</strong>
+      <strong>MarmaraDavinci V5 (Da Vinci ±180°)</strong>
     </div>
     <div class="badges">
       <span class="badge" id="offlineBadge">Önbellek kontrol ediliyor...</span>
@@ -27,7 +27,7 @@
   <nav class="tabs">
     <button class="tab active" data-tab="cameraTab">Çift El Kontrolü</button>
     <button class="tab" data-tab="pidTab">PID Analizi & Ayar</button>
-    <button class="tab" data-tab="manualTab">Manuel / Bağlantı</button>
+    <button class="tab" data-tab="manualTab">Manuel / Kalibrasyon</button>
   </nav>
 
   <main>
@@ -45,6 +45,7 @@
       <div class="controls-row">
         <button id="btnStartCam" class="btn primary">Kamerayı Başlat</button>
         <button id="btnFlipCam" class="btn">Kamera Çevir</button>
+        <button id="btnZeroRef" class="btn">Şimdiyi 0° Say</button>
         <button id="btnHoldActive" class="btn danger-outline">Motorlar Kilitli (Basılı Tut / Aç)</button>
       </div>
 
@@ -57,19 +58,19 @@
         <div class="card">
           <h3>Sol El (L1–L4) <span class="mini-status" id="leftHandBadge">Yok</span></h3>
           <div class="gauges-4">
-            <div class="gauge"><span>L1 Başparmak</span><strong id="valL1">90°</strong></div>
-            <div class="gauge"><span>L2 İşaret</span><strong id="valL2">90°</strong></div>
-            <div class="gauge"><span>L3 Bilek Dönüş</span><strong id="valL3">90°</strong></div>
-            <div class="gauge"><span>L4 Bilek Sağa/Sol</span><strong id="valL4">90°</strong></div>
+            <div class="gauge"><span>L1 Başparmak</span><strong id="valL1">0°</strong></div>
+            <div class="gauge"><span>L2 İşaret</span><strong id="valL2">0°</strong></div>
+            <div class="gauge"><span>L3 Kendi Etrafında</span><strong id="valL3">0°</strong></div>
+            <div class="gauge"><span>L4 Bilek Sağa/Sol</span><strong id="valL4">0°</strong></div>
           </div>
         </div>
         <div class="card">
           <h3>Sağ El (R1–R4) <span class="mini-status" id="rightHandBadge">Yok</span></h3>
           <div class="gauges-4">
-            <div class="gauge"><span>R1 Başparmak</span><strong id="valR1">90°</strong></div>
-            <div class="gauge"><span>R2 İşaret</span><strong id="valR2">90°</strong></div>
-            <div class="gauge"><span>R3 Bilek Dönüş</span><strong id="valR3">90°</strong></div>
-            <div class="gauge"><span>R4 Bilek Sağa/Sol</span><strong id="valR4">90°</strong></div>
+            <div class="gauge"><span>R1 Başparmak</span><strong id="valR1">0°</strong></div>
+            <div class="gauge"><span>R2 İşaret</span><strong id="valR2">0°</strong></div>
+            <div class="gauge"><span>R3 Kendi Etrafında</span><strong id="valR3">0°</strong></div>
+            <div class="gauge"><span>R4 Bilek Sağa/Sol</span><strong id="valR4">0°</strong></div>
           </div>
         </div>
       </div>
@@ -88,22 +89,22 @@
     <section id="pidTab" class="panel">
       <div class="card">
         <div class="pid-header">
-          <h3>Canlı PID Analizi</h3>
+          <h3>Canlı PID Analizi (±180°)</h3>
           <select id="pidMotorSelect">
             <option value="0">L1 - Sol Başparmak</option>
             <option value="1">L2 - Sol İşaret</option>
-            <option value="2">L3 - Sol Bilek Dönüş</option>
+            <option value="2">L3 - Sol Kendi Etrafında Dönüş</option>
             <option value="3">L4 - Sol Bilek Sağa/Sol</option>
             <option value="4">R1 - Sağ Başparmak</option>
             <option value="5">R2 - Sağ İşaret</option>
-            <option value="6">R3 - Sağ Bilek Dönüş</option>
+            <option value="6">R3 - Sağ Kendi Etrafında Dönüş</option>
             <option value="7">R4 - Sağ Bilek Sağa/Sol</option>
           </select>
         </div>
 
         <div class="pid-metrics">
-          <div class="gauge"><span>Hedef (SP)</span><strong id="pidSp">90.0°</strong></div>
-          <div class="gauge"><span>Gerçek (Enc)</span><strong id="pidAct">90.0°</strong></div>
+          <div class="gauge"><span>Hedef (SP)</span><strong id="pidSp">0.0°</strong></div>
+          <div class="gauge"><span>Gerçek (Enc)</span><strong id="pidAct">0.0°</strong></div>
           <div class="gauge"><span>Hata</span><strong id="pidErr">0.0°</strong></div>
           <div class="gauge"><span>Aşım (OS)</span><strong id="pidOs">0.0%</strong></div>
         </div>
@@ -129,12 +130,13 @@
           <button id="btnApplyPidOne" class="btn primary">Seçili Motora Uygula</button>
           <button id="btnApplyPidAll" class="btn">8 Motora Birden Uygula</button>
           <button id="btnStepTest" class="btn danger-outline">Step Testi (+30°)</button>
+          <button id="btnStepTestNeg" class="btn danger-outline">Step Testi (-30°)</button>
           <button id="btnClearPlot" class="btn">Grafiği Temizle</button>
         </div>
       </div>
     </section>
 
-    <!-- SEKME 3: MANUEL VE BAĞLANTI -->
+    <!-- SEKME 3: MANUEL, BAĞLANTI VE KALİBRASYON -->
     <section id="manualTab" class="panel">
       <div class="card">
         <h3>ESP32 Bağlantısı (İnternetsiz Saha Modu)</h3>
@@ -151,26 +153,32 @@
       </div>
 
       <div class="card">
-        <h3>8 Motor Manuel Derece Kontrolü</h3>
+        <h3>Eksen Yönü (Tersle) ve Çarpan (Gain) Kalibrasyonu</h3>
+        <p class="hint">Tendon disklerinizde açı yönü tersse <strong>Ters</strong> kutusunu işaretleyin; mekanik dişli oranına göre hareketi büyütmek/küçültmek için çarpanı ayarlayın (otomatik kaydedilir).</p>
+        <div id="calibContainer" class="calib-grid"></div>
+      </div>
+
+      <div class="card">
+        <h3>8 Motor Manuel Derece Kontrolü (±180°)</h3>
         <div class="hands-grid">
           <div class="manual-sliders">
             <strong>Sol El (L1–L4)</strong>
-            <label>L1 Başparmak: <span id="manLbl0">90°</span><input type="range" class="man-range" data-idx="0" min="0" max="180" value="90" /></label>
-            <label>L2 İşaret: <span id="manLbl1">90°</span><input type="range" class="man-range" data-idx="1" min="0" max="180" value="90" /></label>
-            <label>L3 Bilek Dönüş: <span id="manLbl2">90°</span><input type="range" class="man-range" data-idx="2" min="0" max="180" value="90" /></label>
-            <label>L4 Bilek Sağa/Sol: <span id="manLbl3">90°</span><input type="range" class="man-range" data-idx="3" min="0" max="180" value="90" /></label>
+            <label>L1 Başparmak: <span id="manLbl0">0°</span><input type="range" class="man-range" data-idx="0" min="-180" max="180" value="0" /></label>
+            <label>L2 İşaret: <span id="manLbl1">0°</span><input type="range" class="man-range" data-idx="1" min="-180" max="180" value="0" /></label>
+            <label>L3 Kendi Etrafında: <span id="manLbl2">0°</span><input type="range" class="man-range" data-idx="2" min="-180" max="180" value="0" /></label>
+            <label>L4 Bilek Sağa/Sol: <span id="manLbl3">0°</span><input type="range" class="man-range" data-idx="3" min="-180" max="180" value="0" /></label>
           </div>
           <div class="manual-sliders">
             <strong>Sağ El (R1–R4)</strong>
-            <label>R1 Başparmak: <span id="manLbl4">90°</span><input type="range" class="man-range" data-idx="4" min="0" max="180" value="90" /></label>
-            <label>R2 İşaret: <span id="manLbl5">90°</span><input type="range" class="man-range" data-idx="5" min="0" max="180" value="90" /></label>
-            <label>R3 Bilek Dönüş: <span id="manLbl6">90°</span><input type="range" class="man-range" data-idx="6" min="0" max="180" value="90" /></label>
-            <label>R4 Bilek Sağa/Sol: <span id="manLbl7">90°</span><input type="range" class="man-range" data-idx="7" min="0" max="180" value="90" /></label>
+            <label>R1 Başparmak: <span id="manLbl4">0°</span><input type="range" class="man-range" data-idx="4" min="-180" max="180" value="0" /></label>
+            <label>R2 İşaret: <span id="manLbl5">0°</span><input type="range" class="man-range" data-idx="5" min="-180" max="180" value="0" /></label>
+            <label>R3 Kendi Etrafında: <span id="manLbl6">0°</span><input type="range" class="man-range" data-idx="6" min="-180" max="180" value="0" /></label>
+            <label>R4 Bilek Sağa/Sol: <span id="manLbl7">0°</span><input type="range" class="man-range" data-idx="7" min="-180" max="180" value="0" /></label>
           </div>
         </div>
         <div class="controls-row">
           <button id="btnSendManual" class="btn primary">8 Motor Açısını Gönder</button>
-          <button id="btnCenterAll" class="btn">Hepsini 90° Sıfırla</button>
+          <button id="btnCenterAll" class="btn">Hepsini 0° Sıfırla</button>
         </div>
       </div>
     </section>

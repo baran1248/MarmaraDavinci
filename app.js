@@ -7,6 +7,11 @@ import {
 const WASM_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
 const MODEL_URL = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
 
+const MOTOR_NAMES = [
+  "L1 Başparmak", "L2 İşaret", "L3 Kendi Etrafında", "L4 Bilek Sağa/Sol",
+  "R1 Başparmak", "R2 İşaret", "R3 Kendi Etrafında", "R4 Bilek Sağa/Sol"
+];
+
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("overlay");
 const ctx = canvas.getContext("2d");
@@ -21,6 +26,7 @@ const rightHandBadge = document.getElementById("rightHandBadge");
 
 const btnStartCam = document.getElementById("btnStartCam");
 const btnFlipCam = document.getElementById("btnFlipCam");
+const btnZeroRef = document.getElementById("btnZeroRef");
 const btnHoldActive = document.getElementById("btnHoldActive");
 const chkLatchMode = document.getElementById("chkLatchMode");
 const chkSwapHands = document.getElementById("chkSwapHands");
@@ -29,7 +35,6 @@ const rngDeadband = document.getElementById("rngDeadband");
 const lblAlpha = document.getElementById("lblAlpha");
 const lblDeadband = document.getElementById("lblDeadband");
 
-// 0..3: Sol El (L1..L4), 4..7: Sağ El (R1..R4)
 const valEls = [
   document.getElementById("valL1"), document.getElementById("valL2"),
   document.getElementById("valL3"), document.getElementById("valL4"),
@@ -52,14 +57,16 @@ const inpMaxPwm = document.getElementById("inpMaxPwm");
 const btnApplyPidOne = document.getElementById("btnApplyPidOne");
 const btnApplyPidAll = document.getElementById("btnApplyPidAll");
 const btnStepTest = document.getElementById("btnStepTest");
+const btnStepTestNeg = document.getElementById("btnStepTestNeg");
 const btnClearPlot = document.getElementById("btnClearPlot");
 
-// Manuel ve bağlantı elemanları
+// Manuel ve kalibrasyon elemanları
 const wsUrlInput = document.getElementById("wsUrlInput");
 const btnConnectWs = document.getElementById("btnConnectWs");
 const btnTrustCert = document.getElementById("btnTrustCert");
 const btnSendManual = document.getElementById("btnSendManual");
 const btnCenterAll = document.getElementById("btnCenterAll");
+const calibContainer = document.getElementById("calibContainer");
 
 let handLandmarker = null;
 let drawingUtils = new DrawingUtils(ctx);
@@ -70,16 +77,64 @@ let isArmed = false;
 let ws = null;
 let lastSendTime = 0;
 
-let smoothed = [90, 90, 90, 90, 90, 90, 90, 90];
-let lastSent = [90, 90, 90, 90, 90, 90, 90, 90];
+let smoothed = [0, 0, 0, 0, 0, 0, 0, 0];
+let lastSent = [0, 0, 0, 0, 0, 0, 0, 0];
 
-// PID grafik geçmişi (son 150 örnek)
+// Her el sahneye ilk girdiğinde 0° referans alınır; roll için sürekli (unwrap) takip tutulur
+let leftRef = null;
+let rightRef = null;
+let lastRawLeft = null;
+let lastRawRight = null;
+let prevRollLeft = null;
+let prevRollRight = null;
+let unwrapRollLeft = 0;
+let unwrapRollRight = 0;
+
+// Kalibrasyon (Invert & Gain) localStorage'dan yüklenir
+const DEFAULT_CALIB = Array.from({ length: 8 }, (_, i) => ({
+  invert: false,
+  gain: i % 4 === 3 ? 1.5 : 1.0
+}));
+let calib = JSON.parse(localStorage.getItem("marmara_calib_v5") || "null") || DEFAULT_CALIB;
+
+function saveCalib() {
+  localStorage.setItem("marmara_calib_v5", JSON.stringify(calib));
+}
+
+function renderCalibUI() {
+  calibContainer.innerHTML = "";
+  MOTOR_NAMES.forEach((name, i) => {
+    const row = document.createElement("div");
+    row.className = "calib-row";
+    row.innerHTML = `
+      <span>${name}</span>
+      <label class="inline-chk"><input type="checkbox" data-cidx="${i}" class="cal-inv" ${calib[i].invert ? "checked" : ""}/> Ters</label>
+      <label class="inline-num">Çarpan <input type="number" data-cidx="${i}" class="cal-gain" step="0.1" min="0.2" max="5" value="${calib[i].gain}"/></label>
+    `;
+    calibContainer.appendChild(row);
+  });
+  calibContainer.querySelectorAll(".cal-inv").forEach((el) => {
+    el.addEventListener("change", () => {
+      calib[Number(el.dataset.cidx)].invert = el.checked;
+      saveCalib();
+    });
+  });
+  calibContainer.querySelectorAll(".cal-gain").forEach((el) => {
+    el.addEventListener("change", () => {
+      calib[Number(el.dataset.cidx)].gain = Number(el.value) || 1.0;
+      saveCalib();
+    });
+  });
+}
+renderCalibUI();
+
+// PID grafik geçmişi
 const MAX_HIST = 150;
 let pidHistory = [];
+let stepStart = null;
 let stepTarget = null;
 let stepPeak = 0;
 
-// Sekme geçişleri
 document.querySelectorAll(".tab").forEach((btn) => {
   btn.addEventListener("click", () => {
     document.querySelectorAll(".tab, .panel").forEach((el) => el.classList.remove("active"));
@@ -100,6 +155,18 @@ document.querySelectorAll(".man-range").forEach((r) => {
     const idx = Number(r.dataset.idx);
     document.getElementById(`manLbl${idx}`).textContent = `${r.value}°`;
   });
+});
+
+btnZeroRef.addEventListener("click", () => {
+  leftRef = lastRawLeft ? [...lastRawLeft] : null;
+  rightRef = lastRawRight ? [...lastRawRight] : null;
+  unwrapRollLeft = 0;
+  unwrapRollRight = 0;
+  prevRollLeft = lastRawLeft ? lastRawLeft[2] : null;
+  prevRollRight = lastRawRight ? lastRawRight[2] : null;
+  smoothed = [0, 0, 0, 0, 0, 0, 0, 0];
+  valEls.forEach((el) => (el.textContent = "0°"));
+  if (isArmed) sendTargets(smoothed, true);
 });
 
 function setArmed(state) {
@@ -146,7 +213,6 @@ async function initMediaPipe() {
 
 initMediaPipe();
 
-// WebSocket bağlantısı ve telemetri alıcı
 function connectWS() {
   if (ws) ws.close();
   const url = wsUrlInput.value.trim();
@@ -170,9 +236,7 @@ function connectWS() {
   ws.onmessage = (ev) => {
     try {
       const msg = JSON.parse(ev.data);
-      if (msg.type === "telemetry") {
-        onTelemetry(msg);
-      }
+      if (msg.type === "telemetry") onTelemetry(msg);
     } catch (_) {}
   };
 }
@@ -202,18 +266,18 @@ btnSendManual.addEventListener("click", () => {
 
 btnCenterAll.addEventListener("click", () => {
   document.querySelectorAll(".man-range").forEach((r) => {
-    r.value = 90;
-    document.getElementById(`manLbl${r.dataset.idx}`).textContent = "90°";
+    r.value = 0;
+    document.getElementById(`manLbl${r.dataset.idx}`).textContent = "0°";
   });
-  smoothed = [90, 90, 90, 90, 90, 90, 90, 90];
-  valEls.forEach((el) => (el.textContent = "90°"));
+  smoothed = [0, 0, 0, 0, 0, 0, 0, 0];
+  valEls.forEach((el) => (el.textContent = "0°"));
   sendTargets(smoothed, true);
 });
 
-// PID kontrolleri
 pidMotorSelect.addEventListener("change", () => {
   pidHistory = [];
   stepTarget = null;
+  stepStart = null;
   sendWs({ type: "watch", ch: Number(pidMotorSelect.value) });
   drawPidChart();
 });
@@ -231,16 +295,21 @@ function applyPid(ch) {
 
 btnApplyPidOne.addEventListener("click", () => applyPid(Number(pidMotorSelect.value)));
 btnApplyPidAll.addEventListener("click", () => applyPid("all"));
-btnStepTest.addEventListener("click", () => {
+
+function triggerStep(delta) {
   pidHistory = [];
-  const ch = Number(pidMotorSelect.value);
   stepTarget = null;
+  stepStart = null;
   stepPeak = 0;
-  sendWs({ type: "step", ch, delta: 30 });
-});
+  sendWs({ type: "step", ch: Number(pidMotorSelect.value), delta });
+}
+
+btnStepTest.addEventListener("click", () => triggerStep(30));
+btnStepTestNeg.addEventListener("click", () => triggerStep(-30));
 btnClearPlot.addEventListener("click", () => {
   pidHistory = [];
   stepTarget = null;
+  stepStart = null;
   drawPidChart();
 });
 
@@ -249,15 +318,24 @@ function onTelemetry(t) {
   pidActEl.textContent = `${Number(t.act).toFixed(1)}°`;
   pidErrEl.textContent = `${Number(t.err).toFixed(1)}°`;
 
-  if (stepTarget === null) stepTarget = t.sp;
-  if (t.sp !== stepTarget) {
+  if (stepTarget === null) {
+    stepTarget = t.sp;
+    stepStart = t.act;
+    stepPeak = t.act;
+  } else if (t.sp !== stepTarget) {
+    stepStart = t.act;
     stepTarget = t.sp;
     stepPeak = t.act;
   } else {
-    stepPeak = Math.max(stepPeak, t.act);
+    const dir = stepTarget >= stepStart ? 1 : -1;
+    if (dir > 0) stepPeak = Math.max(stepPeak, t.act);
+    else stepPeak = Math.min(stepPeak, t.act);
   }
-  const os = stepTarget > 1 ? Math.max(0, ((stepPeak - stepTarget) / Math.abs(stepTarget)) * 100) : 0;
-  pidOsEl.textContent = `${os.toFixed(1)}%`;
+
+  const stepSize = Math.abs(stepTarget - stepStart);
+  const overshootDeg = stepTarget >= stepStart ? (stepPeak - stepTarget) : (stepTarget - stepPeak);
+  const osPct = stepSize > 1 ? Math.max(0, (overshootDeg / stepSize) * 100) : 0;
+  pidOsEl.textContent = `${osPct.toFixed(1)}%`;
 
   pidHistory.push({ sp: t.sp, act: t.act, err: t.err, out: t.out });
   if (pidHistory.length > MAX_HIST) pidHistory.shift();
@@ -278,6 +356,14 @@ function drawPidChart() {
     pidCtx.lineTo(w, y);
     pidCtx.stroke();
   }
+  const zeroY = (10 + h * 0.58) / 2;
+  pidCtx.strokeStyle = "#475569";
+  pidCtx.setLineDash([4, 4]);
+  pidCtx.beginPath();
+  pidCtx.moveTo(0, zeroY);
+  pidCtx.lineTo(w, zeroY);
+  pidCtx.stroke();
+  pidCtx.setLineDash([]);
 
   if (pidHistory.length < 2) return;
 
@@ -295,33 +381,53 @@ function drawPidChart() {
     pidCtx.stroke();
   };
 
-  plotLine("sp", "#38bdf8", 0, 180, 10, h * 0.58);
-  plotLine("act", "#22c55e", 0, 180, 10, h * 0.58);
+  plotLine("sp", "#38bdf8", -180, 180, 10, h * 0.58);
+  plotLine("act", "#22c55e", -180, 180, 10, h * 0.58);
   plotLine("err", "#f59e0b", -90, 90, h * 0.64, h - 10);
   plotLine("out", "#ef4444", -255, 255, h * 0.64, h - 10);
 }
 
-// 3D El Açısı Hesaplama
+// 3D Da Vinci El Kinematikleri
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
 function vec(a, b) { return { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z }; }
+function cross(a, b) {
+  return {
+    x: a.y * b.z - a.z * b.y,
+    y: a.z * b.x - a.x * b.z,
+    z: a.x * b.y - a.y * b.x
+  };
+}
 function angleBetween(u, v) {
   const dot = u.x * v.x + u.y * v.y + u.z * v.z;
   const magU = Math.hypot(u.x, u.y, u.z) || 1e-6;
   const magV = Math.hypot(v.x, v.y, v.z) || 1e-6;
   return (Math.acos(clamp(dot / (magU * magV), -1, 1)) * 180) / Math.PI;
 }
+function wrapDelta(d) {
+  while (d > 180) d -= 360;
+  while (d < -180) d += 360;
+  return d;
+}
 
-function computeHandAngles(wl) {
+function computeRawHandAngles(wl) {
+  // Parmaklar kapandıkça açı artar (kapanma = pozitif yön, açılma = negatif yön)
   const thumbFlex = angleBetween(vec(wl[1], wl[2]), vec(wl[2], wl[4]));
-  const m1 = clamp((thumbFlex / 80) * 180, 0, 180);
+  const m1 = (thumbFlex / 80) * 180;
+
   const indexFlex = angleBetween(vec(wl[0], wl[5]), vec(wl[5], wl[8]));
-  const m2 = clamp((indexFlex / 130) * 180, 0, 180);
-  const palmAcross = vec(wl[5], wl[17]);
-  const rollDeg = (Math.atan2(palmAcross.z, palmAcross.x) * 180) / Math.PI;
-  const m3 = clamp(90 + rollDeg, 0, 180);
-  const wristAxis = vec(wl[0], wl[9]);
-  const yawDeg = (Math.atan2(wristAxis.x, -wristAxis.y) * 180) / Math.PI;
-  const m4 = clamp(90 + yawDeg * 1.5, 0, 180);
+  const m2 = (indexFlex / 130) * 180;
+
+  // El lokal eksenleri: forward (bilek->orta kök) ve across (işaret kök->serçe kök)
+  const forward = vec(wl[0], wl[9]);
+  const across = vec(wl[5], wl[17]);
+  const normal = cross(forward, across);
+
+  // M3: Kendi etrafında dönme (Roll - avuç normalinin X-Z düzlemindeki dönüşü)
+  const m3 = (Math.atan2(normal.x, normal.z) * 180) / Math.PI;
+
+  // M4: Bilek sağa-sola (Yaw - bilek->orta kök vektörünün sağ-sol açısı)
+  const m4 = (Math.atan2(forward.x, -forward.y) * 180) / Math.PI;
+
   return [m1, m2, m3, m4];
 }
 
@@ -379,13 +485,41 @@ function loop(now) {
         drawingUtils.drawConnectors(lm, HandLandmarker.HAND_CONNECTIONS, { color, lineWidth: 3 });
         drawingUtils.drawLandmarks(lm, { color: "#f8fafc", radius: 4 });
 
-        const raw = computeHandAngles(wl);
+        const raw = computeRawHandAngles(wl);
+        if (isLeft) {
+          sawLeft = true;
+          lastRawLeft = raw;
+          if (!leftRef) {
+            leftRef = [...raw];
+            prevRollLeft = raw[2];
+            unwrapRollLeft = 0;
+          } else {
+            unwrapRollLeft += wrapDelta(raw[2] - prevRollLeft);
+            prevRollLeft = raw[2];
+          }
+        } else {
+          sawRight = true;
+          lastRawRight = raw;
+          if (!rightRef) {
+            rightRef = [...raw];
+            prevRollRight = raw[2];
+            unwrapRollRight = 0;
+          } else {
+            unwrapRollRight += wrapDelta(raw[2] - prevRollRight);
+            prevRollRight = raw[2];
+          }
+        }
+
+        const ref = isLeft ? leftRef : rightRef;
+        const rollUnwrapped = isLeft ? unwrapRollLeft : unwrapRollRight;
         const offset = isLeft ? 0 : 4;
-        if (isLeft) sawLeft = true; else sawRight = true;
 
         for (let j = 0; j < 4; j++) {
           const ch = offset + j;
-          smoothed[ch] = alpha * raw[j] + (1 - alpha) * smoothed[ch];
+          let rel = j === 2 ? rollUnwrapped : (raw[j] - ref[j]);
+          if (calib[ch].invert) rel = -rel;
+          rel = clamp(rel * calib[ch].gain, -180, 180);
+          smoothed[ch] = alpha * rel + (1 - alpha) * smoothed[ch];
           valEls[ch].textContent = `${Math.round(smoothed[ch])}°`;
         }
       });
