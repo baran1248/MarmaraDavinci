@@ -114,22 +114,32 @@ btnHoldActive.addEventListener("pointerup", () => { if (!chkLatchMode.checked) s
 btnHoldActive.addEventListener("pointerleave", () => { if (!chkLatchMode.checked && isArmed) setArmed(false); });
 btnHoldActive.addEventListener("click", () => { if (chkLatchMode.checked) setArmed(!isArmed); });
 
+async function createLandmarker(vision, delegate) {
+  return HandLandmarker.createFromOptions(vision, {
+    baseOptions: { modelAssetPath: MODEL_URL, delegate },
+    runningMode: "VIDEO",
+    numHands: 2,
+    minHandDetectionConfidence: 0.6,
+    minHandPresenceConfidence: 0.6,
+    minTrackingConfidence: 0.6
+  });
+}
+
 async function initMediaPipe() {
   try {
     offlineBadge.textContent = "El modeli yükleniyor (~13 MB)...";
     const vision = await FilesetResolver.forVisionTasks(WASM_URL);
-    handLandmarker = await HandLandmarker.createFromOptions(vision, {
-      baseOptions: { modelAssetPath: MODEL_URL, delegate: "GPU" },
-      runningMode: "VIDEO",
-      numHands: 2,
-      minHandDetectionConfidence: 0.6,
-      minHandPresenceConfidence: 0.6,
-      minTrackingConfidence: 0.6
-    });
-    offlineBadge.textContent = "Çevrimdışı Kullanıma Hazır ✓";
+    try {
+      handLandmarker = await createLandmarker(vision, "GPU");
+      offlineBadge.textContent = "Çevrimdışı Hazır (GPU) ✓";
+    } catch (gpuErr) {
+      console.warn("GPU delegate başlatılamadı, CPU moduna geçiliyor:", gpuErr);
+      handLandmarker = await createLandmarker(vision, "CPU");
+      offlineBadge.textContent = "Çevrimdışı Hazır (CPU) ✓";
+    }
     offlineBadge.classList.add("ok");
   } catch (err) {
-    offlineBadge.textContent = "Model yüklenemedi (İlk açılışta internet gerekir)";
+    offlineBadge.textContent = `Model hatası: ${err?.message || "İlk açılışta internet gerekir"}`;
     console.error(err);
   }
 }
@@ -259,7 +269,6 @@ function drawPidChart() {
   const h = pidChart.height;
   pidCtx.clearRect(0, 0, w, h);
 
-  // Izgara çizgileri
   pidCtx.strokeStyle = "#1e293b";
   pidCtx.lineWidth = 1;
   for (let i = 1; i < 4; i++) {
@@ -286,11 +295,8 @@ function drawPidChart() {
     pidCtx.stroke();
   };
 
-  // Üst yarı: Açı (0..180°)
   plotLine("sp", "#38bdf8", 0, 180, 10, h * 0.58);
   plotLine("act", "#22c55e", 0, 180, 10, h * 0.58);
-
-  // Alt yarı: Hata (-90..90°) ve PWM (-255..255)
   plotLine("err", "#f59e0b", -90, 90, h * 0.64, h - 10);
   plotLine("out", "#ef4444", -255, 255, h * 0.64, h - 10);
 }
