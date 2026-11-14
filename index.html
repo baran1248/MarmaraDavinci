@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#0f172a" />
+  <title>MarmaraDavinci</title>
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="icon" type="image/svg+xml" href="./icon.svg" />
+  <link rel="apple-touch-icon" href="./icon.svg" />
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot" id="wsDot"></span>
+      <strong>MarmaraDavinci</strong>
+    </div>
+    <div class="badges">
+      <span class="badge" id="offlineBadge">Önbellek kontrol ediliyor...</span>
+      <span class="badge" id="wsBadge">ESP32: Bağlı Değil</span>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab active" data-tab="cameraTab">Kamera ile El Kontrolü</button>
+    <button class="tab" data-tab="manualTab">Manuel / Bağlantı</button>
+  </nav>
+
+  <main>
+    <section id="cameraTab" class="panel active">
+      <div class="video-wrap">
+        <video id="webcam" autoplay playsinline muted></video>
+        <canvas id="overlay"></canvas>
+        <div class="hud-top">
+          <span id="handStatus" class="pill warn">El bekleniyor</span>
+          <span id="fpsLabel" class="pill">0 FPS</span>
+        </div>
+      </div>
+
+      <div class="controls-row">
+        <button id="btnStartCam" class="btn primary">Kamerayı Başlat</button>
+        <button id="btnFlipCam" class="btn">Kamera Çevir</button>
+        <button id="btnHoldActive" class="btn danger-outline">Motorlar Kilitli (Basılı Tut / Aç)</button>
+      </div>
+
+      <div class="toggle-row">
+        <label><input type="checkbox" id="chkLatchMode" /> Kilidi bas-bırak yerine aç/kapa (toggle) modunda kullan</label>
+      </div>
+
+      <div class="gauges">
+        <div class="gauge"><span>M1 Başparmak</span><strong id="valM1">90°</strong></div>
+        <div class="gauge"><span>M2 İşaret</span><strong id="valM2">90°</strong></div>
+        <div class="gauge"><span>M3 Bilek Dönüş</span><strong id="valM3">90°</strong></div>
+        <div class="gauge"><span>M4 Bilek Sağa/Sol</span><strong id="valM4">90°</strong></div>
+      </div>
+
+      <div class="sliders">
+        <label>Yumuşatma (EMA): <span id="lblAlpha">0.25</span>
+          <input type="range" id="rngAlpha" min="0.05" max="0.8" step="0.05" value="0.25" />
+        </label>
+        <label>Ölü Bölge (Deadband): <span id="lblDeadband">1.5°</span>
+          <input type="range" id="rngDeadband" min="0" max="6" step="0.5" value="1.5" />
+        </label>
+      </div>
+    </section>
+
+    <section id="manualTab" class="panel">
+      <div class="card">
+        <h3>ESP32 Bağlantısı (İnternetsiz Saha Modu)</h3>
+        <label>WebSocket Adresi:
+          <input type="text" id="wsUrlInput" value="wss://192.168.4.1/ws" />
+        </label>
+        <div class="controls-row">
+          <button id="btnConnectWs" class="btn primary">ESP32'ye Bağlan</button>
+          <button id="btnTrustCert" class="btn">İlk Bağlantı / Sertifika Onayla</button>
+        </div>
+        <p class="hint">
+          Yeni bir cihazla ESP32 Wi-Fi'ına ilk kez bağlanıyorsan, önce <strong>İlk Bağlantı / Sertifika Onayla</strong> butonuna basıp açılan sayfada <em>Gelişmiş → Devam et</em> de, ardından buraya dönüp bağlan.
+        </p>
+      </div>
+
+      <div class="card">
+        <h3>Manuel Derece Kontrolü</h3>
+        <div class="manual-sliders">
+          <label>M1 Başparmak: <span id="manLbl1">90°</span>
+            <input type="range" class="man-range" data-idx="0" min="0" max="180" value="90" />
+          </label>
+          <label>M2 İşaret: <span id="manLbl2">90°</span>
+            <input type="range" class="man-range" data-idx="1" min="0" max="180" value="90" />
+          </label>
+          <label>M3 Bilek Dönüş: <span id="manLbl3">90°</span>
+            <input type="range" class="man-range" data-idx="2" min="0" max="180" value="90" />
+          </label>
+          <label>M4 Bilek Sağa/Sol: <span id="manLbl4">90°</span>
+            <input type="range" class="man-range" data-idx="3" min="0" max="180" value="90" />
+          </label>
+        </div>
+        <button id="btnSendManual" class="btn primary">Manuel Açıları Gönder</button>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
