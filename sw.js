@@ -1,4 +1,4 @@
-const CACHE_NAME = "robot-el-kontrol-v1";
+const CACHE_NAME = "marmara-davinci-v2";
 const APP_SHELL = [
   "./",
   "./index.html",

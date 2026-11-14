@@ -42,26 +42,20 @@ body {
 }
 .badge.ok { background: #14532d; color: #bbf7d0; }
 
-.tabs {
-  display: flex;
-  background: #162032;
-  border-bottom: 1px solid #334155;
-}
+.tabs { display: flex; background: #162032; border-bottom: 1px solid #334155; }
 .tab {
   flex: 1;
-  padding: 12px;
+  padding: 12px 6px;
   background: none;
   border: none;
   color: var(--muted);
   font-weight: 600;
+  font-size: 0.9rem;
   cursor: pointer;
 }
-.tab.active {
-  color: var(--primary);
-  border-bottom: 2px solid var(--primary);
-}
+.tab.active { color: var(--primary); border-bottom: 2px solid var(--primary); }
 
-main { max-width: 820px; margin: 0 auto; padding: 12px; }
+main { max-width: 920px; margin: 0 auto; padding: 12px; }
 .panel { display: none; }
 .panel.active { display: block; }
 
@@ -73,7 +67,7 @@ main { max-width: 820px; margin: 0 auto; padding: 12px; }
   border-radius: 12px;
   overflow: hidden;
 }
-video, canvas {
+video, canvas#overlay {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -98,12 +92,7 @@ video, canvas {
 .pill.ok { color: #86efac; }
 .pill.warn { color: #fde68a; }
 
-.controls-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 12px 0;
-}
+.controls-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
 .btn {
   flex: 1 1 140px;
   padding: 12px;
@@ -119,23 +108,48 @@ video, canvas {
 .btn.danger-outline { border-color: var(--danger); color: #fca5a5; }
 .btn.armed { background: #15803d; border-color: #4ade80; color: #fff; }
 
-.toggle-row { margin-bottom: 12px; font-size: 0.9rem; color: var(--muted); }
+.toggle-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 12px;
+  font-size: 0.88rem;
+  color: var(--muted);
+}
 
-.gauges {
+.hands-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+@media (min-width: 700px) { .hands-grid { grid-template-columns: 1fr 1fr; } }
+
+.gauges-4, .pid-metrics {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 8px;
-  margin-bottom: 12px;
 }
-@media (min-width: 600px) { .gauges { grid-template-columns: repeat(4, 1fr); } }
+@media (min-width: 520px) { .pid-metrics { grid-template-columns: repeat(4, 1fr); } }
+
 .gauge {
-  background: var(--card);
-  padding: 10px;
-  border-radius: 10px;
+  background: #0f172a;
+  padding: 9px;
+  border-radius: 8px;
   text-align: center;
 }
-.gauge span { display: block; font-size: 0.78rem; color: var(--muted); }
-.gauge strong { font-size: 1.35rem; color: var(--primary); }
+.gauge span { display: block; font-size: 0.75rem; color: var(--muted); }
+.gauge strong { font-size: 1.2rem; color: var(--primary); }
+
+.mini-status {
+  font-size: 0.72rem;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #334155;
+  color: var(--muted);
+  margin-left: 6px;
+}
+.mini-status.ok { background: #14532d; color: #86efac; }
 
 .sliders, .manual-sliders {
   display: flex;
@@ -149,21 +163,58 @@ video, canvas {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  font-size: 0.9rem;
+  font-size: 0.88rem;
 }
-input[type="text"] {
-  padding: 10px;
+
+input[type="text"], input[type="number"], select {
+  padding: 9px;
   border-radius: 8px;
   border: 1px solid #475569;
   background: #0f172a;
   color: var(--text);
-  font-size: 0.95rem;
+  font-size: 0.92rem;
 }
+
 .card {
   background: var(--card);
   padding: 14px;
   border-radius: 12px;
   margin-bottom: 12px;
 }
-.card h3 { margin-top: 0; font-size: 1rem; }
+.card h3 { margin-top: 0; font-size: 1rem; display: flex; align-items: center; }
 .hint { font-size: 0.85rem; color: var(--muted); line-height: 1.45; }
+
+.pid-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.pid-header h3 { margin: 0; }
+.pid-inputs {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+@media (min-width: 600px) { .pid-inputs { grid-template-columns: repeat(4, 1fr); } }
+
+canvas#pidChart {
+  width: 100%;
+  height: auto;
+  background: #0b1120;
+  border-radius: 10px;
+  margin-top: 10px;
+  border: 1px solid #334155;
+}
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
+  font-size: 0.8rem;
+}
+.leg.sp { color: #38bdf8; }
+.leg.act { color: #22c55e; }
+.leg.err { color: #f59e0b; }
+.leg.out { color: #ef4444; }
