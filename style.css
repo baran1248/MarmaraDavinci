@@ -483,3 +483,8 @@ canvas#pidChart {
   width: 68px;
   padding: 5px 6px;
 }
+
+.video-wrap.mirrored video,
+.video-wrap.mirrored canvas#overlay {
+  transform: scaleX(-1);
+}

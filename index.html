@@ -18,7 +18,7 @@
       <span class="dot" id="wsDot"></span>
       <div class="brand-text">
         <strong>MarmaraDavinci</strong>
-        <span class="ver-pill">V9.1</span>
+        <span class="ver-pill">V9.2</span>
       </div>
     </div>
     <div class="badges">
@@ -38,7 +38,7 @@
     <section id="cameraTab" class="panel active">
       <div class="camera-layout">
         <div class="camera-col">
-          <div class="video-wrap">
+          <div class="video-wrap mirrored" id="videoWrap">
             <video id="webcam" autoplay playsinline muted></video>
             <canvas id="overlay"></canvas>
             <div class="hud-top">
@@ -56,7 +56,8 @@
 
           <div class="toggle-row">
             <label><input type="checkbox" id="chkLatchMode" /> Kilidi aç/kapa (toggle) modu</label>
-            <label><input type="checkbox" id="chkSwapHands" /> Sol / Sağ el ters (Ayna)</label>
+            <label><input type="checkbox" id="chkSwapHands" /> Sol / Sağ el ters</label>
+            <label><input type="checkbox" id="chkMirrorView" checked /> Görüntüyü aynala</label>
           </div>
 
           <div class="card sliders">

@@ -30,6 +30,8 @@ const btnZeroRef = document.getElementById("btnZeroRef");
 const btnHoldActive = document.getElementById("btnHoldActive");
 const chkLatchMode = document.getElementById("chkLatchMode");
 const chkSwapHands = document.getElementById("chkSwapHands");
+const chkMirrorView = document.getElementById("chkMirrorView");
+const videoWrap = document.getElementById("videoWrap");
 const rngAlpha = document.getElementById("rngAlpha");
 const rngDeadband = document.getElementById("rngDeadband");
 const lblAlpha = document.getElementById("lblAlpha");
@@ -144,6 +146,7 @@ if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("./sw.js").catch(console.error);
 }
 
+chkMirrorView.addEventListener("change", () => videoWrap.classList.toggle("mirrored", chkMirrorView.checked));
 rngAlpha.addEventListener("input", () => (lblAlpha.textContent = rngAlpha.value));
 rngDeadband.addEventListener("input", () => (lblDeadband.textContent = `${rngDeadband.value}°`));
 
