@@ -93,10 +93,10 @@ let handState = {
 };
 
 const DEFAULT_CALIB = Array.from({ length: 8 }, () => ({ invert: false, gain: 1.0 }));
-let calib = JSON.parse(localStorage.getItem("marmara_calib_v8") || "null") || DEFAULT_CALIB;
+let calib = JSON.parse(localStorage.getItem("marmara_calib_v9") || "null") || DEFAULT_CALIB;
 
 function saveCalib() {
-  localStorage.setItem("marmara_calib_v8", JSON.stringify(calib));
+  localStorage.setItem("marmara_calib_v9", JSON.stringify(calib));
 }
 
 function renderCalibUI() {
@@ -417,12 +417,8 @@ function computeV8Angles(wl, state) {
   // 1) Ortak Yukarı-Aşağı (Pitch) Hareketi:
   // Başparmak (4) ve işaret parmağı (8) uçlarının orta noktasına olan vektörün
   // referans kıstırma düzlemindeki (refNorm vs refFwd) yukarı-aşağı açısı
-  const pinchMid = {
-    x: (wl[4].x + wl[8].x) * 0.5 - wl[0].x,
-    y: (wl[4].y + wl[8].y) * 0.5 - wl[0].y,
-    z: (wl[4].z + wl[8].z) * 0.5 - wl[0].z
-  };
-  const pitchRaw = (Math.atan2(dot(pinchMid, state.refFrame.norm), dot(pinchMid, state.refFrame.fwd)) * 180) / Math.PI;
+  // Ortak yukari-asagi (pitch) yalnizca avuc govdesinden (frame.fwd) alinir; parmak uclari birbirini etkilemez
+  const pitchRaw = (Math.atan2(dot(frame.fwd, state.refFrame.norm), dot(frame.fwd, state.refFrame.fwd)) * 180) / Math.PI;
   if (state.pitchZero === null) state.pitchZero = pitchRaw;
   const pitchDelta = clamp(pitchRaw - state.pitchZero, -180, 180);
 
