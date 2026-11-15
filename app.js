@@ -80,13 +80,12 @@ let lastSendTime = 0;
 let smoothed = [0, 0, 0, 0, 0, 0, 0, 0];
 let lastSent = [0, 0, 0, 0, 0, 0, 0, 0];
 
-// Her el için kamera açısından bağımsız 3D takip durumu
 function createHandState() {
   return {
-    refFrame: null,     // İlk girişteki (veya 0° sıfırlamadaki) { fwd, across, norm }
-    prevFrame: null,    // Bir önceki karedeki { fwd, across, norm }
-    rollDeg: 0,         // Kendi ekseni etrafında biriken dönme açısı
-    touchLocal: null    // Parmaklar değdiğindeki lokal orta nokta { f, a, n }
+    refFrame: null,       // M4 bilek sağ/sol için ilk referans çerçevesi
+    refRoll: null,        // M3 (9->13 noktalarından) ilk referans açısı
+    thumbZero: null,      // Temas anındaki başparmak baz açısı
+    indexZero: null       // Temas anındaki işaret parmağı baz açısı
   };
 }
 
@@ -95,12 +94,11 @@ let handState = {
   right: createHandState()
 };
 
-// Kalibrasyon (Invert & Gain)
 const DEFAULT_CALIB = Array.from({ length: 8 }, () => ({ invert: false, gain: 1.0 }));
-let calib = JSON.parse(localStorage.getItem("marmara_calib_v6") || "null") || DEFAULT_CALIB;
+let calib = JSON.parse(localStorage.getItem("marmara_calib_v7") || "null") || DEFAULT_CALIB;
 
 function saveCalib() {
-  localStorage.setItem("marmara_calib_v6", JSON.stringify(calib));
+  localStorage.setItem("marmara_calib_v7", JSON.stringify(calib));
 }
 
 function renderCalibUI() {
@@ -130,7 +128,6 @@ function renderCalibUI() {
 }
 renderCalibUI();
 
-// PID grafik geçmişi
 const MAX_HIST = 150;
 let pidHistory = [];
 let stepStart = null;
@@ -391,8 +388,6 @@ function vec(a, b) { return { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z }; }
 function dot(a, b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
 function normLen(a) { return Math.hypot(a.x, a.y, a.z) || 1e-6; }
 function normalize(a) { const l = normLen(a); return { x: a.x / l, y: a.y / l, z: a.z / l }; }
-function sub(a, b) { return { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z }; }
-function scale(a, s) { return { x: a.x * s, y: a.y * s, z: a.z * s }; }
 function cross(a, b) {
   return {
     x: a.y * b.z - a.z * b.y,
@@ -400,8 +395,16 @@ function cross(a, b) {
     z: a.x * b.y - a.y * b.x
   };
 }
+function angleBetween(u, v) {
+  const d = dot(u, v);
+  return (Math.acos(clamp(d / (normLen(u) * normLen(v)), -1, 1)) * 180) / Math.PI;
+}
+function wrapDelta(d) {
+  while (d > 180) d -= 360;
+  while (d < -180) d += 360;
+  return d;
+}
 
-// Elin kendi lokal ortonormal çerçevesi (kamera açısından tamamen bağımsız)
 function buildHandFrame(wl) {
   const fwd = normalize(vec(wl[0], wl[9]));
   const rawAcross = vec(wl[5], wl[17]);
@@ -410,77 +413,49 @@ function buildHandFrame(wl) {
   return { fwd, across, norm };
 }
 
-// Noktayı bilek merkezli el-lokal koordinatlara çevir
-function toLocal(pt, wrist, frame) {
-  const p = vec(wrist, pt);
-  return { f: dot(p, frame.fwd), a: dot(p, frame.across), n: dot(p, frame.norm) };
-}
-
-function dist3(a, b) {
-  return Math.hypot(a.f - b.f, a.a - b.a, a.n - b.n);
-}
-
-// Kamera açısından bağımsız 4 eksen hesaplama
-function computeDaVinciAngles(wl, state) {
+function computeV7Angles(wl, state) {
   const frame = buildHandFrame(wl);
   const palmWidth = normLen(vec(wl[5], wl[17])) || 0.08;
 
-  if (!state.refFrame) {
-    state.refFrame = frame;
-    state.prevFrame = frame;
-    state.rollDeg = 0;
-  }
+  // --- M1 (Başparmak -) & M2 (İşaret +): Bağımsız eklem açıları + temas sıfırlama ---
+  const tipGap = normLen(vec(wl[4], wl[8]));
+  const touchThresh = palmWidth * 0.42; // Parmak ucu yastıkları değdiğinde ~3.3cm
 
-  // 1) M1 (Başparmak -) ve M2 (İşaret +): Parmak uçları birbirine değiyorsa ikisi de 0°
-  const thumbL = toLocal(wl[4], wl[0], frame);
-  const indexL = toLocal(wl[8], wl[0], frame);
-  const tipGap = dist3(thumbL, indexL);
-  const touchThresh = palmWidth * 0.30; // ~2.4 cm civarı değme eşiği
+  // Başparmak kendi açısı: 1->4 ile sabit avuç 0->5 arasındaki açı (işaret parmağından bağımsız)
+  const thumbRaw = angleBetween(vec(wl[1], wl[4]), vec(wl[0], wl[5]));
+  // İşaret parmağı kendi açısı: 5->8 ile sabit 5->1 hattı arasındaki açı (başparmaktan bağımsız)
+  const indexRaw = angleBetween(vec(wl[5], wl[8]), vec(wl[5], wl[1]));
+
+  if (state.thumbZero === null) state.thumbZero = thumbRaw;
+  if (state.indexZero === null) state.indexZero = indexRaw;
 
   let m1 = 0;
   let m2 = 0;
+  let touching = tipGap <= touchThresh;
 
-  if (tipGap <= touchThresh || !state.touchLocal) {
-    // Uçlar değiyorsa orta noktayı referans kabul et ve ikisini de 0° yap
-    state.touchLocal = {
-      f: (thumbL.f + indexL.f) * 0.5,
-      a: (thumbL.a + indexL.a) * 0.5,
-      n: (thumbL.n + indexL.n) * 0.5
-    };
-    if (tipGap <= touchThresh) {
-      m1 = 0;
-      m2 = 0;
-    } else {
-      // Henüz değmeden ilk kez açıldıysa mesafeyi oranla
-      const dT = Math.max(0, dist3(thumbL, state.touchLocal) - touchThresh * 0.5);
-      const dI = Math.max(0, dist3(indexL, state.touchLocal) - touchThresh * 0.5);
-      m1 = -clamp((dT / (palmWidth * 0.85)) * 90, 0, 180);
-      m2 = clamp((dI / (palmWidth * 0.85)) * 90, 0, 180);
-    }
+  if (touching) {
+    // Uçlar değiyorsa ikisi de kesin 0° ve temas açısı kalibre edilir
+    state.thumbZero = thumbRaw;
+    state.indexZero = indexRaw;
+    m1 = 0;
+    m2 = 0;
   } else {
-    const dT = Math.max(0, dist3(thumbL, state.touchLocal) - touchThresh * 0.5);
-    const dI = Math.max(0, dist3(indexL, state.touchLocal) - touchThresh * 0.5);
-    m1 = -clamp((dT / (palmWidth * 0.85)) * 90, 0, 180);
-    m2 = clamp((dI / (palmWidth * 0.85)) * 90, 0, 180);
+    m1 = -clamp(Math.max(0, thumbRaw - state.thumbZero) * 2.2, 0, 180);
+    m2 = clamp(Math.max(0, indexRaw - state.indexZero) * 2.2, 0, 180);
   }
 
-  // 2) M3 (Kendi etrafında dönme / Roll): Gimbal-lock'sız artımlı eksen dönüşü
-  const projAcross = sub(state.prevFrame.across, scale(frame.fwd, dot(state.prevFrame.across, frame.fwd)));
-  if (normLen(projAcross) > 1e-4) {
-    const u = normalize(projAcross);
-    const sinA = dot(cross(u, frame.across), frame.fwd);
-    const cosA = clamp(dot(u, frame.across), -1, 1);
-    const dRoll = (Math.atan2(sinA, cosA) * 180) / Math.PI;
-    state.rollDeg = clamp(state.rollDeg + dRoll, -180, 180);
-  }
-  state.prevFrame = frame;
-  const m3 = state.rollDeg;
+  // --- M3 (Kendi Etrafında Dönme): Doğrudan ortadaki 9 (orta kök) ve 13 (yüzük kök) noktaları ---
+  const midKnuckleVec = vec(wl[9], wl[13]);
+  const rollRaw = (Math.atan2(midKnuckleVec.z, midKnuckleVec.x) * 180) / Math.PI;
+  if (state.refRoll === null) state.refRoll = rollRaw;
+  const m3 = clamp(wrapDelta(rollRaw - state.refRoll), -180, 180);
 
-  // 3) M4 (Bilek sağa-sola sallama / kıstırmaya dik eksen): Tüm elin referansa göre sağ-sol açısı
+  // --- M4 (Bilek Sağa-Sola): V6 ile aynı (dokunulmadı) ---
+  if (!state.refFrame) state.refFrame = frame;
   const yawRad = Math.atan2(dot(frame.fwd, state.refFrame.across), dot(frame.fwd, state.refFrame.fwd));
   const m4 = clamp((yawRad * 180) / Math.PI, -180, 180);
 
-  return [m1, m2, m3, m4];
+  return { angles: [m1, m2, m3, m4], touching };
 }
 
 async function startCamera() {
@@ -540,15 +515,20 @@ function loop(now) {
         const st = isLeft ? handState.left : handState.right;
         if (isLeft) sawLeft = true; else sawRight = true;
 
-        const raw = computeDaVinciAngles(wl, st);
+        const { angles, touching } = computeV7Angles(wl, st);
         const offset = isLeft ? 0 : 4;
 
         for (let j = 0; j < 4; j++) {
           const ch = offset + j;
-          let val = raw[j];
-          if (calib[ch].invert) val = -val;
-          val = clamp(val * calib[ch].gain, -180, 180);
-          smoothed[ch] = alpha * val + (1 - alpha) * smoothed[ch];
+          // Uçlar değdiğinde M1 ve M2 kalıntı bırakmadan doğrudan 0°'a oturur
+          if (touching && (j === 0 || j === 1)) {
+            smoothed[ch] = 0;
+          } else {
+            let val = angles[j];
+            if (calib[ch].invert) val = -val;
+            val = clamp(val * calib[ch].gain, -180, 180);
+            smoothed[ch] = alpha * val + (1 - alpha) * smoothed[ch];
+          }
           valEls[ch].textContent = `${Math.round(smoothed[ch])}°`;
         }
       });
