@@ -1,4 +1,4 @@
-const CACHE_NAME = "marmara-davinci-v5";
+const CACHE_NAME = "marmara-davinci-v6";
 const APP_SHELL = [
   "./",
   "./index.html",

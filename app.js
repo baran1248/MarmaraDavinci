@@ -80,25 +80,27 @@ let lastSendTime = 0;
 let smoothed = [0, 0, 0, 0, 0, 0, 0, 0];
 let lastSent = [0, 0, 0, 0, 0, 0, 0, 0];
 
-// Her el sahneye ilk girdiğinde 0° referans alınır; roll için sürekli (unwrap) takip tutulur
-let leftRef = null;
-let rightRef = null;
-let lastRawLeft = null;
-let lastRawRight = null;
-let prevRollLeft = null;
-let prevRollRight = null;
-let unwrapRollLeft = 0;
-let unwrapRollRight = 0;
+// Her el için kamera açısından bağımsız 3D takip durumu
+function createHandState() {
+  return {
+    refFrame: null,     // İlk girişteki (veya 0° sıfırlamadaki) { fwd, across, norm }
+    prevFrame: null,    // Bir önceki karedeki { fwd, across, norm }
+    rollDeg: 0,         // Kendi ekseni etrafında biriken dönme açısı
+    touchLocal: null    // Parmaklar değdiğindeki lokal orta nokta { f, a, n }
+  };
+}
 
-// Kalibrasyon (Invert & Gain) localStorage'dan yüklenir
-const DEFAULT_CALIB = Array.from({ length: 8 }, (_, i) => ({
-  invert: false,
-  gain: i % 4 === 3 ? 1.5 : 1.0
-}));
-let calib = JSON.parse(localStorage.getItem("marmara_calib_v5") || "null") || DEFAULT_CALIB;
+let handState = {
+  left: createHandState(),
+  right: createHandState()
+};
+
+// Kalibrasyon (Invert & Gain)
+const DEFAULT_CALIB = Array.from({ length: 8 }, () => ({ invert: false, gain: 1.0 }));
+let calib = JSON.parse(localStorage.getItem("marmara_calib_v6") || "null") || DEFAULT_CALIB;
 
 function saveCalib() {
-  localStorage.setItem("marmara_calib_v5", JSON.stringify(calib));
+  localStorage.setItem("marmara_calib_v6", JSON.stringify(calib));
 }
 
 function renderCalibUI() {
@@ -158,12 +160,8 @@ document.querySelectorAll(".man-range").forEach((r) => {
 });
 
 btnZeroRef.addEventListener("click", () => {
-  leftRef = lastRawLeft ? [...lastRawLeft] : null;
-  rightRef = lastRawRight ? [...lastRawRight] : null;
-  unwrapRollLeft = 0;
-  unwrapRollRight = 0;
-  prevRollLeft = lastRawLeft ? lastRawLeft[2] : null;
-  prevRollRight = lastRawRight ? lastRawRight[2] : null;
+  handState.left = createHandState();
+  handState.right = createHandState();
   smoothed = [0, 0, 0, 0, 0, 0, 0, 0];
   valEls.forEach((el) => (el.textContent = "0°"));
   if (isArmed) sendTargets(smoothed, true);
@@ -186,9 +184,9 @@ async function createLandmarker(vision, delegate) {
     baseOptions: { modelAssetPath: MODEL_URL, delegate },
     runningMode: "VIDEO",
     numHands: 2,
-    minHandDetectionConfidence: 0.6,
-    minHandPresenceConfidence: 0.6,
-    minTrackingConfidence: 0.6
+    minHandDetectionConfidence: 0.45,
+    minHandPresenceConfidence: 0.45,
+    minTrackingConfidence: 0.45
   });
 }
 
@@ -387,9 +385,14 @@ function drawPidChart() {
   plotLine("out", "#ef4444", -255, 255, h * 0.64, h - 10);
 }
 
-// 3D Da Vinci El Kinematikleri
+// --- 3D Vektör Yardımcıları ---
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
 function vec(a, b) { return { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z }; }
+function dot(a, b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+function normLen(a) { return Math.hypot(a.x, a.y, a.z) || 1e-6; }
+function normalize(a) { const l = normLen(a); return { x: a.x / l, y: a.y / l, z: a.z / l }; }
+function sub(a, b) { return { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z }; }
+function scale(a, s) { return { x: a.x * s, y: a.y * s, z: a.z * s }; }
 function cross(a, b) {
   return {
     x: a.y * b.z - a.z * b.y,
@@ -397,36 +400,85 @@ function cross(a, b) {
     z: a.x * b.y - a.y * b.x
   };
 }
-function angleBetween(u, v) {
-  const dot = u.x * v.x + u.y * v.y + u.z * v.z;
-  const magU = Math.hypot(u.x, u.y, u.z) || 1e-6;
-  const magV = Math.hypot(v.x, v.y, v.z) || 1e-6;
-  return (Math.acos(clamp(dot / (magU * magV), -1, 1)) * 180) / Math.PI;
-}
-function wrapDelta(d) {
-  while (d > 180) d -= 360;
-  while (d < -180) d += 360;
-  return d;
+
+// Elin kendi lokal ortonormal çerçevesi (kamera açısından tamamen bağımsız)
+function buildHandFrame(wl) {
+  const fwd = normalize(vec(wl[0], wl[9]));
+  const rawAcross = vec(wl[5], wl[17]);
+  const norm = normalize(cross(fwd, rawAcross));
+  const across = normalize(cross(norm, fwd));
+  return { fwd, across, norm };
 }
 
-function computeRawHandAngles(wl) {
-  // Parmaklar kapandıkça açı artar (kapanma = pozitif yön, açılma = negatif yön)
-  const thumbFlex = angleBetween(vec(wl[1], wl[2]), vec(wl[2], wl[4]));
-  const m1 = (thumbFlex / 80) * 180;
+// Noktayı bilek merkezli el-lokal koordinatlara çevir
+function toLocal(pt, wrist, frame) {
+  const p = vec(wrist, pt);
+  return { f: dot(p, frame.fwd), a: dot(p, frame.across), n: dot(p, frame.norm) };
+}
 
-  const indexFlex = angleBetween(vec(wl[0], wl[5]), vec(wl[5], wl[8]));
-  const m2 = (indexFlex / 130) * 180;
+function dist3(a, b) {
+  return Math.hypot(a.f - b.f, a.a - b.a, a.n - b.n);
+}
 
-  // El lokal eksenleri: forward (bilek->orta kök) ve across (işaret kök->serçe kök)
-  const forward = vec(wl[0], wl[9]);
-  const across = vec(wl[5], wl[17]);
-  const normal = cross(forward, across);
+// Kamera açısından bağımsız 4 eksen hesaplama
+function computeDaVinciAngles(wl, state) {
+  const frame = buildHandFrame(wl);
+  const palmWidth = normLen(vec(wl[5], wl[17])) || 0.08;
 
-  // M3: Kendi etrafında dönme (Roll - avuç normalinin X-Z düzlemindeki dönüşü)
-  const m3 = (Math.atan2(normal.x, normal.z) * 180) / Math.PI;
+  if (!state.refFrame) {
+    state.refFrame = frame;
+    state.prevFrame = frame;
+    state.rollDeg = 0;
+  }
 
-  // M4: Bilek sağa-sola (Yaw - bilek->orta kök vektörünün sağ-sol açısı)
-  const m4 = (Math.atan2(forward.x, -forward.y) * 180) / Math.PI;
+  // 1) M1 (Başparmak -) ve M2 (İşaret +): Parmak uçları birbirine değiyorsa ikisi de 0°
+  const thumbL = toLocal(wl[4], wl[0], frame);
+  const indexL = toLocal(wl[8], wl[0], frame);
+  const tipGap = dist3(thumbL, indexL);
+  const touchThresh = palmWidth * 0.30; // ~2.4 cm civarı değme eşiği
+
+  let m1 = 0;
+  let m2 = 0;
+
+  if (tipGap <= touchThresh || !state.touchLocal) {
+    // Uçlar değiyorsa orta noktayı referans kabul et ve ikisini de 0° yap
+    state.touchLocal = {
+      f: (thumbL.f + indexL.f) * 0.5,
+      a: (thumbL.a + indexL.a) * 0.5,
+      n: (thumbL.n + indexL.n) * 0.5
+    };
+    if (tipGap <= touchThresh) {
+      m1 = 0;
+      m2 = 0;
+    } else {
+      // Henüz değmeden ilk kez açıldıysa mesafeyi oranla
+      const dT = Math.max(0, dist3(thumbL, state.touchLocal) - touchThresh * 0.5);
+      const dI = Math.max(0, dist3(indexL, state.touchLocal) - touchThresh * 0.5);
+      m1 = -clamp((dT / (palmWidth * 0.85)) * 90, 0, 180);
+      m2 = clamp((dI / (palmWidth * 0.85)) * 90, 0, 180);
+    }
+  } else {
+    const dT = Math.max(0, dist3(thumbL, state.touchLocal) - touchThresh * 0.5);
+    const dI = Math.max(0, dist3(indexL, state.touchLocal) - touchThresh * 0.5);
+    m1 = -clamp((dT / (palmWidth * 0.85)) * 90, 0, 180);
+    m2 = clamp((dI / (palmWidth * 0.85)) * 90, 0, 180);
+  }
+
+  // 2) M3 (Kendi etrafında dönme / Roll): Gimbal-lock'sız artımlı eksen dönüşü
+  const projAcross = sub(state.prevFrame.across, scale(frame.fwd, dot(state.prevFrame.across, frame.fwd)));
+  if (normLen(projAcross) > 1e-4) {
+    const u = normalize(projAcross);
+    const sinA = dot(cross(u, frame.across), frame.fwd);
+    const cosA = clamp(dot(u, frame.across), -1, 1);
+    const dRoll = (Math.atan2(sinA, cosA) * 180) / Math.PI;
+    state.rollDeg = clamp(state.rollDeg + dRoll, -180, 180);
+  }
+  state.prevFrame = frame;
+  const m3 = state.rollDeg;
+
+  // 3) M4 (Bilek sağa-sola sallama / kıstırmaya dik eksen): Tüm elin referansa göre sağ-sol açısı
+  const yawRad = Math.atan2(dot(frame.fwd, state.refFrame.across), dot(frame.fwd, state.refFrame.fwd));
+  const m4 = clamp((yawRad * 180) / Math.PI, -180, 180);
 
   return [m1, m2, m3, m4];
 }
@@ -485,41 +537,18 @@ function loop(now) {
         drawingUtils.drawConnectors(lm, HandLandmarker.HAND_CONNECTIONS, { color, lineWidth: 3 });
         drawingUtils.drawLandmarks(lm, { color: "#f8fafc", radius: 4 });
 
-        const raw = computeRawHandAngles(wl);
-        if (isLeft) {
-          sawLeft = true;
-          lastRawLeft = raw;
-          if (!leftRef) {
-            leftRef = [...raw];
-            prevRollLeft = raw[2];
-            unwrapRollLeft = 0;
-          } else {
-            unwrapRollLeft += wrapDelta(raw[2] - prevRollLeft);
-            prevRollLeft = raw[2];
-          }
-        } else {
-          sawRight = true;
-          lastRawRight = raw;
-          if (!rightRef) {
-            rightRef = [...raw];
-            prevRollRight = raw[2];
-            unwrapRollRight = 0;
-          } else {
-            unwrapRollRight += wrapDelta(raw[2] - prevRollRight);
-            prevRollRight = raw[2];
-          }
-        }
+        const st = isLeft ? handState.left : handState.right;
+        if (isLeft) sawLeft = true; else sawRight = true;
 
-        const ref = isLeft ? leftRef : rightRef;
-        const rollUnwrapped = isLeft ? unwrapRollLeft : unwrapRollRight;
+        const raw = computeDaVinciAngles(wl, st);
         const offset = isLeft ? 0 : 4;
 
         for (let j = 0; j < 4; j++) {
           const ch = offset + j;
-          let rel = j === 2 ? rollUnwrapped : (raw[j] - ref[j]);
-          if (calib[ch].invert) rel = -rel;
-          rel = clamp(rel * calib[ch].gain, -180, 180);
-          smoothed[ch] = alpha * rel + (1 - alpha) * smoothed[ch];
+          let val = raw[j];
+          if (calib[ch].invert) val = -val;
+          val = clamp(val * calib[ch].gain, -180, 180);
+          smoothed[ch] = alpha * val + (1 - alpha) * smoothed[ch];
           valEls[ch].textContent = `${Math.round(smoothed[ch])}°`;
         }
       });
