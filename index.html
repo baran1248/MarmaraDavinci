@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="theme-color" content="#0f172a" />
+  <meta name="theme-color" content="#0b1120" />
   <title>MarmaraDavinci</title>
   <link rel="manifest" href="./manifest.json" />
   <link rel="icon" type="image/svg+xml" href="./icon.svg" />
@@ -16,7 +16,10 @@
   <header class="topbar">
     <div class="brand">
       <span class="dot" id="wsDot"></span>
-      <strong>MarmaraDavinci V9 (Da Vinci EndoWrist ±180°)</strong>
+      <div class="brand-text">
+        <strong>MarmaraDavinci</strong>
+        <span class="ver-pill">V9.1</span>
+      </div>
     </div>
     <div class="badges">
       <span class="badge" id="offlineBadge">Önbellek kontrol ediliyor...</span>
@@ -24,66 +27,75 @@
     </div>
   </header>
 
-  <nav class="tabs">
+  <nav class="tabs" role="tablist">
     <button class="tab active" data-tab="cameraTab">Çift El Kontrolü</button>
     <button class="tab" data-tab="pidTab">PID Analizi & Ayar</button>
     <button class="tab" data-tab="manualTab">Manuel / Kalibrasyon</button>
   </nav>
 
   <main>
+    <!-- SEKME 1: ÇİFT EL KAMERA KONTROLÜ -->
     <section id="cameraTab" class="panel active">
-      <div class="video-wrap">
-        <video id="webcam" autoplay playsinline muted></video>
-        <canvas id="overlay"></canvas>
-        <div class="hud-top">
-          <span id="handStatus" class="pill warn">Eller bekleniyor</span>
-          <span id="fpsLabel" class="pill">0 FPS</span>
-        </div>
-      </div>
+      <div class="camera-layout">
+        <div class="camera-col">
+          <div class="video-wrap">
+            <video id="webcam" autoplay playsinline muted></video>
+            <canvas id="overlay"></canvas>
+            <div class="hud-top">
+              <span id="handStatus" class="pill warn">Eller bekleniyor</span>
+              <span id="fpsLabel" class="pill">0 FPS</span>
+            </div>
+          </div>
 
-      <div class="controls-row">
-        <button id="btnStartCam" class="btn primary">Kamerayı Başlat</button>
-        <button id="btnFlipCam" class="btn">Kamera Çevir</button>
-        <button id="btnZeroRef" class="btn">Şimdiyi 0° Say</button>
-        <button id="btnHoldActive" class="btn danger-outline">Motorlar Kilitli (Basılı Tut / Aç)</button>
-      </div>
+          <div class="controls-row">
+            <button id="btnStartCam" class="btn primary">Kamerayı Başlat</button>
+            <button id="btnFlipCam" class="btn">Kamera Çevir</button>
+            <button id="btnZeroRef" class="btn">Şimdiyi 0° Say</button>
+            <button id="btnHoldActive" class="btn danger-outline">Motorlar Kilitli (Basılı Tut / Aç)</button>
+          </div>
 
-      <div class="toggle-row">
-        <label><input type="checkbox" id="chkLatchMode" /> Kilidi aç/kapa (toggle) modunda kullan</label>
-        <label><input type="checkbox" id="chkSwapHands" /> Sol / Sağ el yönünü ters çevir (Ayna Modu)</label>
-      </div>
+          <div class="toggle-row">
+            <label><input type="checkbox" id="chkLatchMode" /> Kilidi aç/kapa (toggle) modu</label>
+            <label><input type="checkbox" id="chkSwapHands" /> Sol / Sağ el ters (Ayna)</label>
+          </div>
 
-      <div class="hands-grid">
-        <div class="card">
-          <h3>Sol El (L1–L4) <span class="mini-status" id="leftHandBadge">Yok</span></h3>
-          <div class="gauges-4">
-            <div class="gauge"><span>L1 Başparmak (-)</span><strong id="valL1">0°</strong></div>
-            <div class="gauge"><span>L2 İşaret (+)</span><strong id="valL2">0°</strong></div>
-            <div class="gauge"><span>L3 Kendi Etrafında</span><strong id="valL3">0°</strong></div>
-            <div class="gauge"><span>L4 Bilek Sağa/Sol</span><strong id="valL4">0°</strong></div>
+          <div class="card sliders">
+            <label>
+              <span class="slider-head"><span>Yumuşatma (EMA)</span><strong id="lblAlpha">0.25</strong></span>
+              <input type="range" id="rngAlpha" min="0.05" max="0.8" step="0.05" value="0.25" />
+            </label>
+            <label>
+              <span class="slider-head"><span>Ölü Bölge (Deadband)</span><strong id="lblDeadband">1.5°</strong></span>
+              <input type="range" id="rngDeadband" min="0" max="6" step="0.5" value="1.5" />
+            </label>
           </div>
         </div>
-        <div class="card">
-          <h3>Sağ El (R1–R4) <span class="mini-status" id="rightHandBadge">Yok</span></h3>
-          <div class="gauges-4">
-            <div class="gauge"><span>R1 Başparmak (-)</span><strong id="valR1">0°</strong></div>
-            <div class="gauge"><span>R2 İşaret (+)</span><strong id="valR2">0°</strong></div>
-            <div class="gauge"><span>R3 Kendi Etrafında</span><strong id="valR3">0°</strong></div>
-            <div class="gauge"><span>R4 Bilek Sağa/Sol</span><strong id="valR4">0°</strong></div>
+
+        <div class="hands-col">
+          <div class="card hand-card left-accent">
+            <h3>Sol El (L1–L4) <span class="mini-status" id="leftHandBadge">Yok</span></h3>
+            <div class="gauges-4">
+              <div class="gauge"><span>L1 Başparmak (-)</span><strong id="valL1">0°</strong></div>
+              <div class="gauge"><span>L2 İşaret (+)</span><strong id="valL2">0°</strong></div>
+              <div class="gauge"><span>L3 Kendi Etrafında</span><strong id="valL3">0°</strong></div>
+              <div class="gauge"><span>L4 Bilek Sağa/Sol</span><strong id="valL4">0°</strong></div>
+            </div>
+          </div>
+
+          <div class="card hand-card right-accent">
+            <h3>Sağ El (R1–R4) <span class="mini-status" id="rightHandBadge">Yok</span></h3>
+            <div class="gauges-4">
+              <div class="gauge"><span>R1 Başparmak (-)</span><strong id="valR1">0°</strong></div>
+              <div class="gauge"><span>R2 İşaret (+)</span><strong id="valR2">0°</strong></div>
+              <div class="gauge"><span>R3 Kendi Etrafında</span><strong id="valR3">0°</strong></div>
+              <div class="gauge"><span>R4 Bilek Sağa/Sol</span><strong id="valR4">0°</strong></div>
+            </div>
           </div>
         </div>
-      </div>
-
-      <div class="sliders">
-        <label>Yumuşatma (EMA): <span id="lblAlpha">0.25</span>
-          <input type="range" id="rngAlpha" min="0.05" max="0.8" step="0.05" value="0.25" />
-        </label>
-        <label>Ölü Bölge (Deadband): <span id="lblDeadband">1.5°</span>
-          <input type="range" id="rngDeadband" min="0" max="6" step="0.5" value="1.5" />
-        </label>
       </div>
     </section>
 
+    <!-- SEKME 2: PID ANALİZİ VE AYAR -->
     <section id="pidTab" class="panel">
       <div class="card">
         <div class="pid-header">
@@ -107,7 +119,9 @@
           <div class="gauge"><span>Aşım (OS)</span><strong id="pidOs">0.0%</strong></div>
         </div>
 
-        <canvas id="pidChart" width="760" height="280"></canvas>
+        <div class="chart-wrap">
+          <canvas id="pidChart" width="760" height="260"></canvas>
+        </div>
         <div class="legend">
           <span class="leg sp">━ Hedef (Setpoint)</span>
           <span class="leg act">━ Gerçek (Encoder)</span>
@@ -119,25 +133,26 @@
       <div class="card">
         <h3>PID Parametreleri ve Step Testi</h3>
         <div class="pid-inputs">
-          <label>Kp (Oransal): <input type="number" id="inpKp" step="0.1" value="2.5" /></label>
-          <label>Ki (İntegral): <input type="number" id="inpKi" step="0.01" value="0.05" /></label>
-          <label>Kd (Türev): <input type="number" id="inpKd" step="0.01" value="0.12" /></label>
-          <label>Max PWM (0-255): <input type="number" id="inpMaxPwm" step="5" min="20" max="255" value="200" /></label>
+          <label>Kp (Oransal)<input type="number" id="inpKp" step="0.1" value="2.5" /></label>
+          <label>Ki (İntegral)<input type="number" id="inpKi" step="0.01" value="0.05" /></label>
+          <label>Kd (Türev)<input type="number" id="inpKd" step="0.01" value="0.12" /></label>
+          <label>Max PWM (0-255)<input type="number" id="inpMaxPwm" step="5" min="20" max="255" value="200" /></label>
         </div>
         <div class="controls-row">
           <button id="btnApplyPidOne" class="btn primary">Seçili Motora Uygula</button>
-          <button id="btnApplyPidAll" class="btn">8 Motora Birden Uygula</button>
-          <button id="btnStepTest" class="btn danger-outline">Step Testi (+30°)</button>
-          <button id="btnStepTestNeg" class="btn danger-outline">Step Testi (-30°)</button>
-          <button id="btnClearPlot" class="btn">Grafiği Temizle</button>
+          <button id="btnApplyPidAll" class="btn">8 Motora Uygula</button>
+          <button id="btnStepTest" class="btn danger-outline">Step (+30°)</button>
+          <button id="btnStepTestNeg" class="btn danger-outline">Step (-30°)</button>
+          <button id="btnClearPlot" class="btn">Temizle</button>
         </div>
       </div>
     </section>
 
+    <!-- SEKME 3: MANUEL, BAĞLANTI VE KALİBRASYON -->
     <section id="manualTab" class="panel">
       <div class="card">
         <h3>ESP32 Bağlantısı (İnternetsiz Saha Modu)</h3>
-        <label>WebSocket Adresi:
+        <label class="field-label">WebSocket Adresi
           <input type="text" id="wsUrlInput" value="wss://192.168.4.1/ws" />
         </label>
         <div class="controls-row">
@@ -160,17 +175,17 @@
         <div class="hands-grid">
           <div class="manual-sliders">
             <strong>Sol El (L1–L4)</strong>
-            <label>L1 Başparmak: <span id="manLbl0">0°</span><input type="range" class="man-range" data-idx="0" min="-180" max="180" value="0" /></label>
-            <label>L2 İşaret: <span id="manLbl1">0°</span><input type="range" class="man-range" data-idx="1" min="-180" max="180" value="0" /></label>
-            <label>L3 Kendi Etrafında: <span id="manLbl2">0°</span><input type="range" class="man-range" data-idx="2" min="-180" max="180" value="0" /></label>
-            <label>L4 Bilek Sağa/Sol: <span id="manLbl3">0°</span><input type="range" class="man-range" data-idx="3" min="-180" max="180" value="0" /></label>
+            <label><span class="slider-head"><span>L1 Başparmak</span><strong id="manLbl0">0°</strong></span><input type="range" class="man-range" data-idx="0" min="-180" max="180" value="0" /></label>
+            <label><span class="slider-head"><span>L2 İşaret</span><strong id="manLbl1">0°</strong></span><input type="range" class="man-range" data-idx="1" min="-180" max="180" value="0" /></label>
+            <label><span class="slider-head"><span>L3 Kendi Etrafında</span><strong id="manLbl2">0°</strong></span><input type="range" class="man-range" data-idx="2" min="-180" max="180" value="0" /></label>
+            <label><span class="slider-head"><span>L4 Bilek Sağa/Sol</span><strong id="manLbl3">0°</strong></span><input type="range" class="man-range" data-idx="3" min="-180" max="180" value="0" /></label>
           </div>
           <div class="manual-sliders">
             <strong>Sağ El (R1–R4)</strong>
-            <label>R1 Başparmak: <span id="manLbl4">0°</span><input type="range" class="man-range" data-idx="4" min="-180" max="180" value="0" /></label>
-            <label>R2 İşaret: <span id="manLbl5">0°</span><input type="range" class="man-range" data-idx="5" min="-180" max="180" value="0" /></label>
-            <label>R3 Kendi Etrafında: <span id="manLbl6">0°</span><input type="range" class="man-range" data-idx="6" min="-180" max="180" value="0" /></label>
-            <label>R4 Bilek Sağa/Sol: <span id="manLbl7">0°</span><input type="range" class="man-range" data-idx="7" min="-180" max="180" value="0" /></label>
+            <label><span class="slider-head"><span>R1 Başparmak</span><strong id="manLbl4">0°</strong></span><input type="range" class="man-range" data-idx="4" min="-180" max="180" value="0" /></label>
+            <label><span class="slider-head"><span>R2 İşaret</span><strong id="manLbl5">0°</strong></span><input type="range" class="man-range" data-idx="5" min="-180" max="180" value="0" /></label>
+            <label><span class="slider-head"><span>R3 Kendi Etrafında</span><strong id="manLbl6">0°</strong></span><input type="range" class="man-range" data-idx="6" min="-180" max="180" value="0" /></label>
+            <label><span class="slider-head"><span>R4 Bilek Sağa/Sol</span><strong id="manLbl7">0°</strong></span><input type="range" class="man-range" data-idx="7" min="-180" max="180" value="0" /></label>
           </div>
         </div>
         <div class="controls-row">
